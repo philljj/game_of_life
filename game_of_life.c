@@ -130,7 +130,7 @@ print_usage_and_die(void)
     fprintf(stderr, "usage:\n");
     fprintf(stderr, "%s -n <len> -b <born> -l <low> -h <high> -dq", prog_name);
     fprintf(stderr, "\noptions:\n");
-    fprintf(stderr, "  n: the length of square board. 1-99\n");
+    fprintf(stderr, "  n: the length of square board. 2-99\n");
     fprintf(stderr, "  b: the born number in BnSij rule\n");
     fprintf(stderr, "  l: the low survival number in BnSij rule\n");
     fprintf(stderr, "  h: the high survival number in BnSij rule\n");
