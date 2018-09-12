@@ -10,6 +10,9 @@ char   prog_name[] = "life";
 pid_t  pid;
 size_t archive = 0;
 size_t debug = 0;
+size_t quiet = 0;
+size_t sleep_interval = 0;
+
 size_t surv_l = 2;
 size_t surv_h = 3;
 size_t born = 3;
@@ -17,7 +20,7 @@ size_t born = 3;
 char * mem_index[128];
 
 int print_usage_and_die(void);
-void * safer_calloc(const size_t count, const size_t size);
+void * safer_malloc(const size_t count);
 int run_game(const size_t len);
 
 void (*eval_rule)(char * board_dst, const char * board_src, const size_t len);
@@ -62,7 +65,7 @@ main(int    argc,
     int    opt = 0;
     size_t len = 0;
 
-    while ((opt = getopt(argc, argv, "b:l:h:n:ad")) != -1) {
+    while ((opt = getopt(argc, argv, "b:l:h:n:s:adq")) != -1) {
         switch (opt) {
         case 'a':
             archive = 1;
@@ -70,6 +73,14 @@ main(int    argc,
 
         case 'd':
             debug = 1;
+            break;
+
+        case 's':
+            sleep_interval = get_len(optarg);
+            break;
+
+        case 'q':
+            quiet = 1;
             break;
 
         case 'n':
@@ -129,13 +140,12 @@ print_usage_and_die(void)
 
 
 void *
-safer_calloc(const size_t count,
-             const size_t size)
+safer_malloc(const size_t count)
 {
-    void * ptr = calloc(count, size);
+    void * ptr = malloc(count);
 
     if (!ptr) {
-        fprintf(stderr, "error: calloc(%zu, %zu) failed\n", count, size);
+        fprintf(stderr, "error: malloc(%zu) failed\n", count);
         exit(EXIT_FAILURE);
     }
 
@@ -484,11 +494,10 @@ check_state(struct state_t * state,
         return;
     }
 
-
-    for (size_t j = i; j > 0; --j) {
-        if (same_board(board_dst, mem_index[i - 1], len_sq)) {
+    for (size_t j = i - 1; j > 1; --j) {
+        if (same_board(board_dst, mem_index[j], len_sq)) {
             state->status = PERIODIC;
-            state->period = i + 1 - j;
+            state->period = i - j;
             return;
         }
     }
@@ -509,7 +518,11 @@ append_board(char * board_dst)
     while (mem_index[i] && i < 128) { ++i; }
 
     if (i == 128 - 1) {
-        memset(mem_index, 0, sizeof(mem_index));
+        for (size_t j = 1; j < 128; ++j) {
+            free(mem_index[j]);
+            mem_index[j] = 0;
+        }
+
         mem_index[0] = root;
         i = 1;
     }
@@ -527,12 +540,11 @@ run_game(const size_t len)
     int          status = EXIT_SUCCESS;
     const size_t len_sq = len * len;
 
-    char * board_ini = safer_calloc(len_sq, sizeof(char));
-    char * board_src = safer_calloc(len_sq, sizeof(char));
-    char * board_dst = safer_calloc(len_sq, sizeof(char));
+    char * board_ini = safer_malloc(len_sq);
+    char * board_src = safer_malloc(len_sq);
+    char * board_dst = 0;
 
     reset_board(board_src, len_sq);
-    reset_board(board_dst, len_sq);
 
     init_board(board_src, len_sq);
     init_dir();
@@ -541,23 +553,23 @@ run_game(const size_t len)
 
     copy_board(board_ini, board_src, len_sq);
 
-    // beg
-    // src
-    // dst
-
-    // 0, dynamic. 1, static. 2, periodic.
     struct state_t state;
 
     state.status = EVOLVING;
     state.period = 1;
 
-    for (;;) {
-        print_board(board_src, len);
+    size_t iter = 0;
 
+    for (;;) {
+        if (!quiet) {
+            printf("\niteration %zu\n", iter);
+            print_board(board_src, len);
+        }
+
+        board_dst = safer_malloc(len_sq);
         copy_board(board_dst, board_src, len_sq);
 
         eval_rule(board_dst, board_src, len);
-
         check_state(&state, board_dst, len_sq);
 
         if (state.status != EVOLVING) { break; }
@@ -566,14 +578,40 @@ run_game(const size_t len)
 
         swap_board(&board_src, &board_dst);
 
-        sleep(1);
-    }
+        ++iter;
 
+        sleep(sleep_interval);
+    }
 
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
 
-    printf("now: %d-%d-%d_%d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    printf("finished at %d-%d-%d_%d:%d:%d\n",
+           tm.tm_year + 1900, tm.tm_mon + 1,
+           tm.tm_mday, tm.tm_hour, tm.tm_min,
+           tm.tm_sec);
+
+    switch (state.status) {
+        case DEAD:
+            printf("All life dead by %zu iterations\n", iter);
+            break;
+        case STATIC:
+            printf("All life in stasis by %zu iterations\n", iter);
+            break;
+        case PERIODIC:
+            printf("All life in periodicity of %zu\n by %zu iterations",
+                   state.period, iter);
+            break;
+        case EVOLVING:
+            printf("All life still evolving at %zu\n", iter);
+            break;
+    }
+
+    printf("\ninitial board:\n");
+    print_board(board_ini, len);
+
+    printf("\nfinal board:\n");
+    print_board(board_dst, len);
 
 
     return status;
