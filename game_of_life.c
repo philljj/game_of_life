@@ -110,8 +110,8 @@ main(int    argc,
         print_usage_and_die();
     }
 
-    if (!len) {
-        fprintf(stderr, "error: need a non zero length\n");
+    if (len < 2) {
+        fprintf(stderr, "error: need a length > 2\n");
         print_usage_and_die();
     }
 
@@ -128,10 +128,15 @@ int
 print_usage_and_die(void)
 {
     fprintf(stderr, "usage:\n");
-    fprintf(stderr, "%s -n <num> -r <rule>\n", prog_name);
-    fprintf(stderr, "\nvalid rules:\n");
-    fprintf(stderr, "  1: standard Conway game of life\n");
-    fprintf(stderr, "  BiSjk: cell born and survive rules\n");
+    fprintf(stderr, "%s -n <len> -b <born> -l <low> -h <high> -dq", prog_name);
+    fprintf(stderr, "\noptions:\n");
+    fprintf(stderr, "  n: the length of square board. 1-99\n");
+    fprintf(stderr, "  b: the born number in BnSij rule\n");
+    fprintf(stderr, "  l: the low survival number in BnSij rule\n");
+    fprintf(stderr, "  h: the high survival number in BnSij rule\n");
+    fprintf(stderr, "  s: sleep interval\n");
+    fprintf(stderr, "  q: quiet mode. Enable to reduce print output\n");
+    fprintf(stderr, "  d: debug mode (prints function entry)\n");
 
 
     exit(EXIT_FAILURE);
