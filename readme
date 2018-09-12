@@ -1,0 +1,2 @@
+example usage:
+./life -n 24 -b 3 -l 2 -h 3
