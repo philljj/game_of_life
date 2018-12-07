@@ -206,7 +206,7 @@ void
 init_board(char *       board,
            const size_t len_sq)
 {
-    srand(pid);
+    srand(pid * time(NULL));
 
     size_t index = 0;
     size_t times = rand() % len_sq;
