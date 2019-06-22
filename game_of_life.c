@@ -5,27 +5,6 @@
 #include <unistd.h>
 #include <time.h>
 
-// globals
-char   prog_name[] = "life";
-pid_t  pid;
-size_t archive = 0;
-size_t debug = 0;
-size_t quiet = 0;
-size_t sleep_interval = 0;
-
-size_t surv_l = 2;
-size_t surv_h = 3;
-size_t born = 3;
-
-char * mem_index[128];
-
-int print_usage_and_die(void);
-void * safer_malloc(const size_t count);
-int run_game(const size_t len);
-
-void (*eval_rule)(char * board_dst, const char * board_src, const size_t len);
-void traditional_rule(char * board_dst, const char * board_src, const size_t len);
-
 enum status_t {
     DEAD,
     EVOLVING,
@@ -38,23 +17,38 @@ struct state_t {
     size_t        period;
 };
 
-size_t
-get_len(const char * arg)
-{
-    const char * n = arg;
+static char   prog_name[] = "life";
+static pid_t  pid;
+static size_t debug = 0;
+static size_t surv_l = 2;
+static size_t surv_h = 3;
+static size_t born = 3;
+static char * mem_index[128];
 
-    while (*arg) {
-        if (!isdigit(*arg)) {
-            fprintf(stderr, "error: %c of %s is not a number\n",
-                    *arg, arg);
-            print_usage_and_die();
-        }
+static int      print_usage_and_die(void);
+static size_t   get_len(const char * arg);
+static void *   safer_malloc(const size_t count);
+static void     init_dir(void);
+static void     init_board(char * board, const size_t len_sq);
+static void     reset_board(char * board, const size_t len_sq);
+static void     print_board(char * board, const size_t len);
+static void     copy_board(char * board_dst, const char * board_src,
+                           const size_t len_sq);
+static size_t   same_board(const char * board_1, const char * board_2,
+                           const size_t len_sq);
+static int      run_game(const size_t len, const size_t sleep_interval,
+                         const size_t quiet);
+static size_t   life_exists(const char * board, const size_t len_sq);
+static void     check_state(struct state_t * state, const char * board_dst,
+                            const size_t len_sq);
+static void     traditional_rule(char * board_dst, const char * board_src,
+                                 const size_t len);
+static void   (*eval_rule)(char * board_dst, const char * board_src,
+                           const size_t len);
+static size_t (*check_dir[8])(const char * board, const size_t i,
+                              const size_t j, const size_t len);
 
-        ++arg;
-    }
-
-    return atoi(n);
-}
+
 
 int
 main(int    argc,
@@ -64,13 +58,11 @@ main(int    argc,
 
     int    opt = 0;
     size_t len = 0;
+    size_t sleep_interval = 0;
+    size_t quiet = 0;
 
     while ((opt = getopt(argc, argv, "b:l:h:n:s:adq")) != -1) {
         switch (opt) {
-        case 'a':
-            archive = 1;
-            break;
-
         case 'd':
             debug = 1;
             break;
@@ -119,12 +111,12 @@ main(int    argc,
 
     eval_rule = traditional_rule;
 
-    return run_game(len);
+    return run_game(len, sleep_interval, quiet);
 }
 
 
 
-int
+static int
 print_usage_and_die(void)
 {
     fprintf(stderr, "usage:\n");
@@ -144,7 +136,27 @@ print_usage_and_die(void)
 
 
 
-void *
+static size_t
+get_len(const char * arg)
+{
+    const char * n = arg;
+
+    while (*arg) {
+        if (!isdigit(*arg)) {
+            fprintf(stderr, "error: %c of %s is not a number\n",
+                    *arg, arg);
+            print_usage_and_die();
+        }
+
+        ++arg;
+    }
+
+    return atoi(n);
+}
+
+
+
+static void *
 safer_malloc(const size_t count)
 {
     void * ptr = malloc(count);
@@ -159,7 +171,7 @@ safer_malloc(const size_t count)
 
 
 
-void
+static void
 reset_board(char *       board,
             const size_t len_sq)
 {
@@ -172,7 +184,7 @@ reset_board(char *       board,
 
 
 
-void
+static void
 copy_board(char *       board_dst,
            const char * board_src,
            const size_t len_sq)
@@ -202,7 +214,7 @@ same_board(const char * board_1,
 
 
 
-void
+static void
 init_board(char *       board,
            const size_t len_sq)
 {
@@ -221,7 +233,7 @@ init_board(char *       board,
 
 
 
-void
+static void
 print_board(char *       board,
             const size_t len)
 {
@@ -239,7 +251,7 @@ print_board(char *       board,
 
 
 
-void
+static void
 swap_board(char * * b_1_ptr,
            char * * b_2_ptr)
 {
@@ -250,178 +262,9 @@ swap_board(char * * b_1_ptr,
 
     return;
 }
-
 
 
-size_t
-u(const size_t i,
-  const size_t j,
-  const size_t len)
-{
-    return i > 0; 
-}
-
-
-
-size_t
-d(const size_t i,
-  const size_t j,
-  const size_t len)
-{
-    return i < len - 1;
-}
-
-
-
-size_t
-l(const size_t i,
-  const size_t j,
-  const size_t len)
-{
-    return j > 0;
-}
-
-
-
-size_t
-r(const size_t i,
-  const size_t j,
-  const size_t len)
-{
-    return j < len - 1;
-}
-
-
-
-size_t
-u_life(const char * board,
-        const size_t i,
-        const size_t j,
-        const size_t len)
-{
-    if (!u(i, j, len)) { return 0; }
-
-    return board[(i - 1) * len + j] == 'o';
-}
-
-
-
-size_t
-d_life(const char * board,
-        const size_t i,
-        const size_t j,
-        const size_t len)
-{
-    if (!d(i, j, len)) { return 0; }
-
-    return board[(i + 1) * len + j] == 'o';
-}
-
-
-
-size_t
-r_life(const char * board,
-       const size_t i,
-       const size_t j,
-       const size_t len)
-{
-    if (!r(i, j, len)) { return 0; }
-
-    return board[i * len + j + 1] == 'o';
-}
-
-
-
-size_t
-l_life(const char * board,
-       const size_t i,
-       const size_t j,
-       const size_t len)
-{
-    if (!l(i, j, len)) { return 0; }
-
-    return board[i * len + j - 1] == 'o';
-}
-
-
-
-size_t
-ur_life(const char * board,
-        const size_t i,
-        const size_t j,
-        const size_t len)
-{
-    if (!u(i, j, len)) { return 0; }
-    if (!r(i, j, len)) { return 0; }
-
-    return board[(i - 1) * len + j + 1] == 'o';
-}
-
-
-
-size_t
-ul_life(const char * board,
-        const size_t i,
-        const size_t j,
-        const size_t len)
-{
-    if (!u(i, j, len)) { return 0; }
-    if (!l(i, j, len)) { return 0; }
-
-    return board[(i - 1) * len + j - 1] == 'o';
-}
-
-
-
-size_t
-dr_life(const char * board,
-        const size_t i,
-        const size_t j,
-        const size_t len)
-{
-    if (!d(i, j, len)) { return 0; }
-    if (!r(i, j, len)) { return 0; }
-
-    return board[(i + 1) * len + j + 1] == 'o';
-}
-
-
-
-size_t
-dl_life(const char * board,
-        const size_t i,
-        const size_t j,
-        const size_t len)
-{
-    if (!d(i, j, len)) { return 0; }
-    if (!l(i, j, len)) { return 0; }
-
-    return board[(i + 1) * len + j - 1] == 'o';
-}
-
-
-
-size_t (*check_dir[8])(const char * board, const size_t i, const size_t j,
-                       const size_t len);
-
-void
-init_dir(void)
-{
-    check_dir[0] = u_life;
-    check_dir[1] = d_life;
-    check_dir[2] = r_life;
-    check_dir[3] = l_life;
-    check_dir[4] = ur_life;
-    check_dir[5] = ul_life;
-    check_dir[6] = dr_life;
-    check_dir[7] = dl_life;
-
-    return;
-}
-
-
-
-void
+static void
 traditional_rule(char *       board_dst,
                  const char * board_src,
                  const size_t len)
@@ -459,7 +302,7 @@ traditional_rule(char *       board_dst,
 
 
 
-size_t
+static size_t
 life_exists(const char * board,
             const size_t len_sq)
 {
@@ -476,7 +319,7 @@ life_exists(const char * board,
 
 
 
-void
+static void
 check_state(struct state_t * state,
             const char *     board_dst,
             const size_t     len_sq)
@@ -512,7 +355,7 @@ check_state(struct state_t * state,
 
 
 
-void
+static void
 append_board(char * board_dst)
 {
     if (debug) { fprintf(stderr, "debug: append_board(\n"); }
@@ -539,8 +382,10 @@ append_board(char * board_dst)
 
 
 
-int
-run_game(const size_t len)
+static int
+run_game(const size_t len,
+         const size_t sleep_interval,
+         const size_t quiet)
 {
     int          status = EXIT_SUCCESS;
     const size_t len_sq = len * len;
@@ -549,10 +394,11 @@ run_game(const size_t len)
     char * board_src = safer_malloc(len_sq);
     char * board_dst = 0;
 
-    reset_board(board_src, len_sq);
-
-    init_board(board_src, len_sq);
     init_dir();
+
+    reset_board(board_src, len_sq);
+    init_board(board_src, len_sq);
+
     memset(mem_index, 0, sizeof(mem_index));
     mem_index[0] = board_ini;
 
@@ -604,7 +450,7 @@ run_game(const size_t len)
             printf("All life in stasis by %zu iterations\n", iter);
             break;
         case PERIODIC:
-            printf("All life in periodicity of %zu\n by %zu iterations",
+            printf("All life in periodicity of %zu by %zu iterations\n",
                    state.period, iter);
             break;
         case EVOLVING:
@@ -620,4 +466,169 @@ run_game(const size_t len)
 
 
     return status;
+}
+
+
+
+static size_t
+u(const size_t i,
+  const size_t j,
+  const size_t len)
+{
+    return i > 0; 
+}
+
+
+
+static size_t
+d(const size_t i,
+  const size_t j,
+  const size_t len)
+{
+    return i < len - 1;
+}
+
+
+
+size_t
+l(const size_t i,
+  const size_t j,
+  const size_t len)
+{
+    return j > 0;
+}
+
+
+
+static size_t
+r(const size_t i,
+  const size_t j,
+  const size_t len)
+{
+    return j < len - 1;
+}
+
+
+
+size_t
+u_life(const char * board,
+        const size_t i,
+        const size_t j,
+        const size_t len)
+{
+    if (!u(i, j, len)) { return 0; }
+
+    return board[(i - 1) * len + j] == 'o';
+}
+
+
+
+static size_t
+d_life(const char * board,
+        const size_t i,
+        const size_t j,
+        const size_t len)
+{
+    if (!d(i, j, len)) { return 0; }
+
+    return board[(i + 1) * len + j] == 'o';
+}
+
+
+
+static size_t
+r_life(const char * board,
+       const size_t i,
+       const size_t j,
+       const size_t len)
+{
+    if (!r(i, j, len)) { return 0; }
+
+    return board[i * len + j + 1] == 'o';
+}
+
+
+
+static size_t
+l_life(const char * board,
+       const size_t i,
+       const size_t j,
+       const size_t len)
+{
+    if (!l(i, j, len)) { return 0; }
+
+    return board[i * len + j - 1] == 'o';
+}
+
+
+
+static size_t
+ur_life(const char * board,
+        const size_t i,
+        const size_t j,
+        const size_t len)
+{
+    if (!u(i, j, len)) { return 0; }
+    if (!r(i, j, len)) { return 0; }
+
+    return board[(i - 1) * len + j + 1] == 'o';
+}
+
+
+
+static size_t
+ul_life(const char * board,
+        const size_t i,
+        const size_t j,
+        const size_t len)
+{
+    if (!u(i, j, len)) { return 0; }
+    if (!l(i, j, len)) { return 0; }
+
+    return board[(i - 1) * len + j - 1] == 'o';
+}
+
+
+
+static size_t
+dr_life(const char * board,
+        const size_t i,
+        const size_t j,
+        const size_t len)
+{
+    if (!d(i, j, len)) { return 0; }
+    if (!r(i, j, len)) { return 0; }
+
+    return board[(i + 1) * len + j + 1] == 'o';
+}
+
+
+
+static size_t
+dl_life(const char * board,
+        const size_t i,
+        const size_t j,
+        const size_t len)
+{
+    if (!d(i, j, len)) { return 0; }
+    if (!l(i, j, len)) { return 0; }
+
+    return board[(i + 1) * len + j - 1] == 'o';
+}
+
+
+
+static void
+init_dir(void)
+{
+    check_dir[0] = u_life;
+    check_dir[1] = d_life;
+    check_dir[2] = r_life;
+    check_dir[3] = l_life;
+    check_dir[4] = ur_life;
+    check_dir[5] = ul_life;
+    check_dir[6] = dr_life;
+    check_dir[7] = dl_life;
+
+    return;
 }
